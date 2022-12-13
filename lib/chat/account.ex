@@ -5,20 +5,26 @@ defmodule Account do
 
   def start() do
     GenServer.start(__MODULE__, [], name: __MODULE__)
-    # IO.inspect("Login: *Account.login(*username*, *email*, *password*)*")
   end
 
   def register(username, email, password) do
-    GenServer.cast(
+    GenServer.call(
       __MODULE__,
       {:register, {{:username, username}, {:email, email}, {:password, password}}}
     )
   end
 
-  def login(id, password) do
+  def login(username, password) do
     GenServer.call(
       __MODULE__,
-      {:login, {{:id, id}, {:password, password}}}
+      {:login, {{:username, username}, {:password, password}}}
+    )
+  end
+
+  def logout(username) do
+    GenServer.call(
+      __MODULE__,
+      {:logout, {:username, username}}
     )
   end
 
@@ -38,52 +44,80 @@ defmodule Account do
   end
 
   @impl true
-  def handle_call({:login, {{:id, u_id}, {:password, u_password}}}, _from, state) do
-    user =
-      Enum.find(state, fn %{
-                            id: id,
-                            username: _name,
-                            email: _mail,
-                            password: _pass,
-                            is_logged_in: _status
-                          } ->
-        id == u_id
-      end)
+  def handle_call({:login, {{:username, username}, {:password, u_password}}}, _from, state) do
+    user = find_user(state, username)
 
     if user == nil do
       {:reply, {:error, "no such user"}, state}
     else
       if user.password == u_password do
-        new_state =
-          Enum.map(state, fn
-            %Account{id: id} = new_user ->
-              if id == user.id do
-                %Account{new_user | is_logged_in: true}
-              else
-                new_user
-              end
-          end)
+        new_state = user_is_logged_in(state, user, true)
 
         {:reply, {:success, "you have logged in"}, new_state}
+      else
+        {:reply, {:error, "wrong password"}, state}
       end
     end
   end
 
   @impl true
-  def handle_cast(
+  def handle_call(
         {:register, {{:username, username}, {:email, email}, {:password, password}}},
+        _from,
         state
       ) do
-    {:noreply,
-     [
-       %Account{
-         id: "\#{username}##\{1234\}",
-         username: username,
-         email: email,
-         password: password,
-         is_logged_in: false
-       }
-       | state
-     ]}
+    user = find_user(state, username)
+
+    if user != nil do
+      {:reply, {:error, "such account already exists"}, state}
+    else
+      {:reply, {:success, "successfully registered"},
+       [
+         %Account{
+           id: "##{username}{1234}",
+           username: username,
+           email: email,
+           password: password,
+           is_logged_in: false
+         }
+         | state
+       ]}
+    end
+  end
+
+  @impl true
+  def handle_call({:logout, {:username, username}}, _from, state) do
+    user = find_user(state, username)
+
+    if user == nil do
+      {:reply, {:error, "such user doesn't exist"}, state}
+    else
+      new_state = user_is_logged_in(state, user, false)
+
+      {:reply, {:success, "you have logged out"}, new_state}
+    end
+  end
+
+  def find_user(state, username) do
+    Enum.find(state, fn %{
+                          id: id,
+                          username: _name,
+                          email: _mail,
+                          password: _pass,
+                          is_logged_in: _status
+                        } ->
+      id == "##{username}{1234}"
+    end)
+  end
+
+  def user_is_logged_in(state, user, bool) do
+    Enum.map(state, fn
+      %Account{id: id} = new_user ->
+        if id == user.id do
+          %Account{new_user | is_logged_in: bool}
+        else
+          new_user
+        end
+    end)
   end
 end
