@@ -1,7 +1,7 @@
 defmodule Account do
   use GenServer
 
-  defstruct [:id, :username, :email, :password, :is_logged_in]
+  defstruct [:id, :username, :email, :password, :is_logged_in, :invitations]
 
   def start() do
     GenServer.start(__MODULE__, [], name: __MODULE__)
@@ -25,6 +25,13 @@ defmodule Account do
     GenServer.call(
       __MODULE__,
       {:logout, {:username, username}}
+    )
+  end
+
+  def send_invitation(sender, receiver) do
+    GenServer.call(
+      __MODULE__,
+      {:invite, {{:sender, sender}, {:receiver, receiver}}}
     )
   end
 
@@ -74,11 +81,12 @@ defmodule Account do
       {:reply, {:success, "successfully registered"},
        [
          %Account{
-           id: "##{username}{1234}",
+           id: username,
            username: username,
            email: email,
            password: password,
-           is_logged_in: false
+           is_logged_in: false,
+           invitations: []
          }
          | state
        ]}
@@ -98,6 +106,49 @@ defmodule Account do
     end
   end
 
+  @impl true
+  def handle_call({:invite, {{:sender, sender}, {:receiver, receiver}}}, _from, state) do
+    user_sender = find_user(state, sender)
+    user_receiver = find_user(state, receiver)
+
+    cond do
+      user_sender == nil ->
+        {:reply, {:error, "such sender doesn't exist"}, state}
+
+      user_receiver == nil ->
+        {:reply, {:error, "such receiver doesn't exist"}, state}
+
+      true ->
+        # TODO: User should be logged in to make use of this action
+        invitation =
+          Enum.find(
+            user_receiver.invitations,
+            fn sender_id ->
+              sender_id == user_sender.id
+            end
+          )
+
+        if invitation != nil do
+          {:reply, {:error, "there is already such an invite"}, state}
+        else
+          new_state =
+            Enum.map(state, fn
+              %Account{id: id} = new_user ->
+                if id == user_receiver.id do
+                  %Account{
+                    user_receiver
+                    | invitations: [user_sender.id | user_receiver.invitations]
+                  }
+                else
+                  new_user
+                end
+            end)
+
+          {:reply, {:success, "successfully sent the invitation"}, new_state}
+        end
+    end
+  end
+
   def find_user(state, username) do
     Enum.find(state, fn %{
                           id: id,
@@ -106,7 +157,7 @@ defmodule Account do
                           password: _pass,
                           is_logged_in: _status
                         } ->
-      id == "##{username}{1234}"
+      id == username
     end)
   end
 
