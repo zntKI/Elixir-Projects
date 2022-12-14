@@ -1,7 +1,7 @@
 defmodule Account do
   use GenServer
 
-  defstruct [:id, :username, :email, :password, :is_logged_in, :invitations]
+  defstruct [:id, :username, :email, :password, :is_logged_in, :invitations, :friendlist]
 
   def start() do
     GenServer.start(__MODULE__, [], name: __MODULE__)
@@ -32,6 +32,21 @@ defmodule Account do
     GenServer.call(
       __MODULE__,
       {:invite, {{:sender, sender}, {:receiver, receiver}}}
+    )
+  end
+
+  def list_all_invites(username) do
+    GenServer.call(
+      __MODULE__,
+      {:list_all, {:username, username}}
+    )
+  end
+
+  def handle_invite(username, username_to_handle, action) do
+    GenServer.call(
+      __MODULE__,
+      {:handle_action,
+       {{:username, username}, {:user_handle, username_to_handle}, {:action, action}}}
     )
   end
 
@@ -86,7 +101,8 @@ defmodule Account do
            email: email,
            password: password,
            is_logged_in: false,
-           invitations: []
+           invitations: [],
+           friendlist: []
          }
          | state
        ]}
@@ -118,35 +134,128 @@ defmodule Account do
       user_receiver == nil ->
         {:reply, {:error, "such receiver doesn't exist"}, state}
 
+      user_sender.is_logged_in == false ->
+        {:reply, {:error, "the sender isn't logged in"}, state}
+
       true ->
         # TODO: User should be logged in to make use of this action
-        invitation =
-          Enum.find(
-            user_receiver.invitations,
-            fn sender_id ->
-              sender_id == user_sender.id
-            end
-          )
+        friend = Enum.find(user_receiver.friendlist, fn fr -> fr == user_sender.id end)
 
-        if invitation != nil do
-          {:reply, {:error, "there is already such an invite"}, state}
+        if friend != nil do
+          {:reply, {:error, "user: #{user_sender.id} is already friend to #{user_receiver.id}"},
+           state}
         else
-          new_state =
+          invitation =
+            Enum.find(
+              user_receiver.invitations,
+              fn sender_id ->
+                sender_id == user_sender.id
+              end
+            )
+
+          if invitation != nil do
+            {:reply, {:error, "there is already such an invite"}, state}
+          else
+            new_state =
+              Enum.map(state, fn
+                %Account{id: id} = new_user ->
+                  if id == user_receiver.id do
+                    %Account{
+                      user_receiver
+                      | invitations: [user_sender.id | user_receiver.invitations]
+                    }
+                  else
+                    new_user
+                  end
+              end)
+
+            {:reply, {:success, "successfully sent the invitation"}, new_state}
+          end
+        end
+    end
+  end
+
+  @impl true
+  def handle_call({:list_all, {:username, username}}, _from, state) do
+    user = find_user(state, username)
+
+    if user == nil do
+      {:reply, {:error, "such user doesn't exist"}, state}
+    else
+      {:reply, {:success, user.invitations}, state}
+    end
+  end
+
+  @impl true
+  def handle_call(
+        {:handle_action,
+         {{:username, username}, {:user_handle, username_to_handle}, {:action, action}}},
+        _from,
+        state
+      ) do
+    user = find_user(state, username)
+
+    if user == nil do
+      {:reply, {:error, "such user doesn't exist"}, state}
+    else
+      invitation = find_invitation(user, username_to_handle)
+
+      case invitation do
+        nil ->
+          {:reply, {:error, "there isn't a invite from such user"}, state}
+
+        _ ->
+          deleted_invite_state =
             Enum.map(state, fn
               %Account{id: id} = new_user ->
-                if id == user_receiver.id do
+                if id == user.id do
                   %Account{
-                    user_receiver
-                    | invitations: [user_sender.id | user_receiver.invitations]
+                    user
+                    | invitations: List.delete(user.invitations, username_to_handle)
                   }
                 else
                   new_user
                 end
             end)
 
-          {:reply, {:success, "successfully sent the invitation"}, new_state}
-        end
+          if action == "accept" do
+            new_state =
+              Enum.map(deleted_invite_state, fn
+                %Account{id: id} = new_user ->
+                  if id == user.id do
+                    %Account{
+                      user
+                      | friendlist: [username_to_handle | user.friendlist],
+                        invitations: List.delete(user.invitations, username_to_handle)
+                    }
+                  else
+                    new_user
+                  end
+              end)
+
+            {:reply,
+             {:success, "successfully accepted the invitation from #{username_to_handle}"},
+             new_state}
+          else
+            if action != "decline" do
+              {:reply, "no such action accessable: #{action}", state}
+            else
+              {:reply,
+               {:success, "successfully declined the invitation from #{username_to_handle}"},
+               deleted_invite_state}
+            end
+          end
+      end
     end
+  end
+
+  def find_invitation(user_receiver, user_sender) do
+    Enum.find(
+      user_receiver.invitations,
+      fn sender_id ->
+        sender_id == user_sender
+      end
+    )
   end
 
   def find_user(state, username) do
