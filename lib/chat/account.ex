@@ -3,57 +3,6 @@ defmodule Account do
 
   defstruct [:id, :username, :email, :password, :is_logged_in, :invitations, :friendlist]
 
-  def start() do
-    GenServer.start(__MODULE__, [], name: __MODULE__)
-  end
-
-  def register(username, email, password) do
-    GenServer.call(
-      __MODULE__,
-      {:register, {{:username, username}, {:email, email}, {:password, password}}}
-    )
-  end
-
-  def login(username, password) do
-    GenServer.call(
-      __MODULE__,
-      {:login, {{:username, username}, {:password, password}}}
-    )
-  end
-
-  def logout(username) do
-    GenServer.call(
-      __MODULE__,
-      {:logout, {:username, username}}
-    )
-  end
-
-  def send_invitation(sender, receiver) do
-    GenServer.call(
-      __MODULE__,
-      {:invite, {{:sender, sender}, {:receiver, receiver}}}
-    )
-  end
-
-  def list_all_invites(username) do
-    GenServer.call(
-      __MODULE__,
-      {:list_all, {:username, username}}
-    )
-  end
-
-  def handle_invite(username, username_to_handle, action) do
-    GenServer.call(
-      __MODULE__,
-      {:handle_action,
-       {{:username, username}, {:user_handle, username_to_handle}, {:action, action}}}
-    )
-  end
-
-  def get_state() do
-    GenServer.call(__MODULE__, :get_state)
-  end
-
   @impl true
   def init(_state) do
     IO.inspect("Register: *Account.register(*username*, *email*, *password*)*")
@@ -93,6 +42,8 @@ defmodule Account do
     if user != nil do
       {:reply, {:error, "such account already exists"}, state}
     else
+      App.add_user(username)
+
       {:reply, {:success, "successfully registered"},
        [
          %Account{
@@ -219,6 +170,8 @@ defmodule Account do
             end)
 
           if action == "accept" do
+            user_to_handle = find_user(state, username_to_handle)
+
             new_state =
               Enum.map(deleted_invite_state, fn
                 %Account{id: id} = new_user ->
@@ -229,9 +182,18 @@ defmodule Account do
                         invitations: List.delete(user.invitations, username_to_handle)
                     }
                   else
-                    new_user
+                    if id == user_to_handle.id do
+                      %Account{
+                        user_to_handle
+                        | friendlist: [username | user_to_handle.friendlist]
+                      }
+                    else
+                      new_user
+                    end
                   end
               end)
+
+            App.add_friend(username, username_to_handle)
 
             {:reply,
              {:success, "successfully accepted the invitation from #{username_to_handle}"},
@@ -247,6 +209,20 @@ defmodule Account do
           end
       end
     end
+  end
+
+  @impl true
+  def handle_call(
+        {:are_friends, {{:user_1, user_1}, {:user_2, user_2}}},
+        _from,
+        state
+      ) do
+    user_account = find_user(state, user_1.user_id)
+
+    {:reply,
+     Enum.any?(user_account.friendlist, fn friend ->
+       friend == user_2.user_id
+     end), state}
   end
 
   def find_invitation(user_receiver, user_sender) do
@@ -280,4 +256,13 @@ defmodule Account do
         end
     end)
   end
+
+  # def are_friends(first_username, second_username) do
+  #   find_user()
+  # end
+
+  # @impl true
+  # def handle_call(:test, _from, state) do
+  #   {:reply, true, state}
+  # end
 end
