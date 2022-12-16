@@ -77,7 +77,14 @@ defmodule App do
   def send_message(sender, receiver, message) do
     GenServer.call(
       Messaging,
-      {:send, {:sender, sender}, {:receiver, receiver}, {:message, message}}
+      {:send, {{:sender, sender}, {:receiver, receiver}, {:message, message}}}
+    )
+  end
+
+  def remove_message(sender, receiver, message) do
+    GenServer.call(
+      Messaging,
+      {:remove, {{:sender, sender}, {:receiver, receiver}, {:message, message}}}
     )
   end
 end

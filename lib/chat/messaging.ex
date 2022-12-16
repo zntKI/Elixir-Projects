@@ -15,7 +15,7 @@ defmodule Messaging do
 
   @impl true
   def handle_call(
-        {:send, {:sender, sender}, {:receiver, receiver}, {:message, message}},
+        {:send, {{:sender, sender}, {:receiver, receiver}, {:message, message}}},
         _from,
         state
       ) do
@@ -42,15 +42,24 @@ defmodule Messaging do
                   %Messaging{
                     user_receiver
                     | messages:
-                        Enum.map(messages_from_all, fn {sender_id, {:msgs, msgs}} = new_msgs ->
+                        Enum.map(messages_from_all, fn map = new_msgs ->
+                          sender_id =
+                            map
+                            |> Map.keys()
+                            |> List.first()
+
                           if sender_id == sender do
-                            {sender_id,
-                             {:msgs,
+                            Map.update!(map, sender_id, fn msgs ->
                               [
-                                {{:content, message}, {:status, "unread"},
-                                 {:time, Time.utc_now()}, {:edited, false}}
+                                %{
+                                  content: message,
+                                  status: "unread",
+                                  time: Time.utc_now(),
+                                  edited: false
+                                }
                                 | msgs
-                              ]}}
+                              ]
+                            end)
                           else
                             new_msgs
                           end
@@ -62,6 +71,93 @@ defmodule Messaging do
             end)
 
           {:reply, {:succes, "successfully sent message to #{receiver}"}, new_state}
+        end
+    end
+  end
+
+  @impl true
+  def handle_call(
+        {:remove, {{:sender, sender}, {:receiver, receiver}, {:message, message}}},
+        _from,
+        state
+      ) do
+    user_sender = find_user(state, sender)
+    user_receiver = find_user(state, receiver)
+
+    cond do
+      user_sender == nil ->
+        {:reply, {:error, "such sender doesn't exist"}, state}
+
+      user_receiver == nil ->
+        {:reply, {:error, "such receiver doesn't exist"}, state}
+
+      true ->
+        are_friends = App.are_friends(user_sender, user_receiver)
+
+        if are_friends == false do
+          {:reply, {:error, "users are not friends"}, state}
+        else
+          contains_message =
+            Enum.find(user_receiver.messages, false, fn map ->
+              sender_id =
+                map
+                |> Map.keys()
+                |> List.first()
+
+              if sender_id == user_sender.user_id do
+                Enum.any?(map[sender_id], fn %{
+                                               content: content,
+                                               edited: _edited,
+                                               status: status,
+                                               time: _time
+                                             } ->
+                  content == message and status == "unread"
+                end)
+              end
+            end)
+
+          if contains_message == false do
+            {:reply,
+             {:error, "either such message couldn't be found or it has been read by the user"},
+             state}
+          else
+            new_state =
+              Enum.map(state, fn
+                %Messaging{user_id: id, messages: messages_from_all} = new_user ->
+                  if id == receiver do
+                    %Messaging{
+                      user_receiver
+                      | messages:
+                          Enum.map(messages_from_all, fn map = new_msgs ->
+                            sender_id =
+                              map
+                              |> Map.keys()
+                              |> List.first()
+
+                            if sender_id == sender do
+                              after_removal =
+                                Enum.filter(map[sender_id], fn %{
+                                                                 content: content,
+                                                                 status: _status,
+                                                                 time: _time,
+                                                                 edited: _is_edited
+                                                               } ->
+                                  message != content
+                                end)
+
+                              %{sender_id => after_removal}
+                            else
+                              new_msgs
+                            end
+                          end)
+                    }
+                  else
+                    new_user
+                  end
+              end)
+
+            {:reply, {:succes, "successfully removed message sent to #{receiver}"}, new_state}
+          end
         end
     end
   end
@@ -89,13 +185,13 @@ defmodule Messaging do
           if id == username do
             %Messaging{
               user
-              | messages: [{username_to_add, {:msgs, []}} | user.messages]
+              | messages: [%{username_to_add => []} | user.messages]
             }
           else
             if id == username_to_add do
               %Messaging{
                 user_to_add
-                | messages: [{username, {:msgs, []}} | user_to_add.messages]
+                | messages: [%{username => []} | user_to_add.messages]
               }
             else
               new_user
