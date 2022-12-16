@@ -118,8 +118,8 @@ defmodule Messaging do
 
           if contains_message == false do
             {:reply,
-             {:error, "either such message couldn't be found or it has been read by the user"},
-             state}
+             {:error,
+              "either such message doesn't exist or it has been already read by the user"}, state}
           else
             new_state =
               Enum.map(state, fn
@@ -160,6 +160,165 @@ defmodule Messaging do
           end
         end
     end
+  end
+
+  @impl true
+  def handle_call(
+        {:edit,
+         {{:sender, sender}, {:receiver, receiver}, {:old_message, old_message},
+          {:new_message, new_message}}},
+        _from,
+        state
+      ) do
+    user_sender = find_user(state, sender)
+    user_receiver = find_user(state, receiver)
+
+    cond do
+      user_sender == nil ->
+        {:reply, {:error, "such sender doesn't exist"}, state}
+
+      user_receiver == nil ->
+        {:reply, {:error, "such receiver doesn't exist"}, state}
+
+      true ->
+        are_friends = App.are_friends(user_sender, user_receiver)
+
+        if are_friends == false do
+          {:reply, {:error, "users are not friends"}, state}
+        else
+          contains_message =
+            Enum.find(user_receiver.messages, false, fn map ->
+              sender_id =
+                map
+                |> Map.keys()
+                |> List.first()
+
+              if sender_id == user_sender.user_id do
+                Enum.any?(map[sender_id], fn %{
+                                               content: content,
+                                               edited: _edited,
+                                               status: _status,
+                                               time: time
+                                             } ->
+                  content == old_message and Time.diff(Time.utc_now(), time) <= 60
+                end)
+              end
+            end)
+
+          if contains_message == false do
+            {:reply,
+             {:error,
+              "either such message doesn't exist or it has been already a minute since the message has been posted by the user"},
+             state}
+          else
+            new_state =
+              Enum.map(state, fn
+                %Messaging{user_id: id, messages: messages_from_all} = new_user ->
+                  if id == receiver do
+                    %Messaging{
+                      user_receiver
+                      | messages:
+                          Enum.map(messages_from_all, fn map = new_msgs ->
+                            sender_id =
+                              map
+                              |> Map.keys()
+                              |> List.first()
+
+                            if sender_id == sender do
+                              after_removal =
+                                Enum.map(map[sender_id], fn %{
+                                                              content: content,
+                                                              status: _status,
+                                                              time: _time,
+                                                              edited: _is_edited
+                                                            } = map ->
+                                  if content == old_message do
+                                    %{map | content: new_message, edited: true}
+                                  else
+                                    map
+                                  end
+                                end)
+
+                              %{sender_id => after_removal}
+                            else
+                              new_msgs
+                            end
+                          end)
+                    }
+                  else
+                    new_user
+                  end
+              end)
+
+            {:reply, {:succes, "successfully edited message sent to #{receiver}"}, new_state}
+          end
+        end
+    end
+  end
+
+  @impl true
+  def handle_call({:list_unread, {{:receiver, receiver}, {:sender, sender}}}, _from, state) do
+    user_receiver = find_user(state, receiver)
+
+    cond do
+      user_receiver == nil ->
+        {:reply, {:error, "No such receiver"}, state}
+
+      sender == nil ->
+        user = find_user(state, receiver)
+
+        msgs =
+          Enum.map(user.messages, fn map ->
+            sender_id =
+              map
+              |> Map.keys()
+              |> List.first()
+
+            map[sender_id]
+          end)
+
+        filtered = filter_unread(msgs)
+
+        {:reply, {:all_unread, filtered}, state}
+
+      true ->
+        user = find_user(state, sender)
+
+        if user == nil do
+          {:reply, {:error, "No such sender"}, state}
+        else
+          msgs =
+            Enum.map(user_receiver.messages, fn map ->
+              sender_id =
+                map
+                |> Map.keys()
+                |> List.first()
+
+              IO.inspect(sender_id)
+
+              if sender_id == sender do
+                IO.inspect(map[sender_id])
+                map[sender_id]
+              else
+                []
+              end
+            end)
+
+          IO.inspect(msgs)
+
+          filtered = filter_unread(msgs)
+
+          {:reply, {:unread_from_user, "Uread messages from #{sender}", filtered}, state}
+        end
+    end
+  end
+
+  def filter_unread(msgs) do
+    msgs
+    |> List.flatten()
+    |> Enum.filter(fn %{content: _content, edited: _edited, status: status, time: _time} ->
+      status == "unread"
+    end)
   end
 
   @impl true

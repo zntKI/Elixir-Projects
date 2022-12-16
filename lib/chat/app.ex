@@ -87,4 +87,20 @@ defmodule App do
       {:remove, {{:sender, sender}, {:receiver, receiver}, {:message, message}}}
     )
   end
+
+  def edit_message(sender, receiver, old_message, new_message) do
+    GenServer.call(
+      Messaging,
+      {:edit,
+       {{:sender, sender}, {:receiver, receiver}, {:old_message, old_message},
+        {:new_message, new_message}}}
+    )
+  end
+
+  def list_unread(receiver, sender \\ nil) do
+    GenServer.call(
+      Messaging,
+      {:list_unread, {{:receiver, receiver}, {:sender, sender}}}
+    )
+  end
 end
