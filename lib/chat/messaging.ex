@@ -313,6 +313,33 @@ defmodule Messaging do
     end
   end
 
+  @impl true
+  def handle_call({:total_unread, {:receiver, receiver}}, _from, state) do
+    user_receiver = find_user(state, receiver)
+
+    cond do
+      user_receiver == nil ->
+        {:reply, {:error, "No such receiver"}, state}
+
+      true ->
+        user = find_user(state, receiver)
+
+        msgs =
+          Enum.map(user.messages, fn map ->
+            sender_id =
+              map
+              |> Map.keys()
+              |> List.first()
+
+            map[sender_id]
+          end)
+
+        filtered = filter_unread(msgs)
+
+        {:reply, {:total_unread, Enum.count(filtered)}, state}
+    end
+  end
+
   def filter_unread(msgs) do
     msgs
     |> List.flatten()

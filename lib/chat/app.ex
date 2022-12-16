@@ -41,7 +41,14 @@ defmodule App do
   def list_all_invites(username) do
     GenServer.call(
       Account,
-      {:list_all, {:username, username}}
+      {:list_all_invites, {:username, username}}
+    )
+  end
+
+  def list_all_friends(username) do
+    GenServer.call(
+      Account,
+      {:list_all_friends, {:username, username}}
     )
   end
 
@@ -101,6 +108,13 @@ defmodule App do
     GenServer.call(
       Messaging,
       {:list_unread, {{:receiver, receiver}, {:sender, sender}}}
+    )
+  end
+
+  def total_unread(receiver) do
+    GenServer.call(
+      Messaging,
+      {:total_unread, {:receiver, receiver}}
     )
   end
 end

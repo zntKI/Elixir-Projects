@@ -127,13 +127,24 @@ defmodule Account do
   end
 
   @impl true
-  def handle_call({:list_all, {:username, username}}, _from, state) do
+  def handle_call({:list_all_invites, {:username, username}}, _from, state) do
     user = find_user(state, username)
 
     if user == nil do
       {:reply, {:error, "such user doesn't exist"}, state}
     else
       {:reply, {:success, user.invitations}, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:list_all_friends, {:username, username}}, _from, state) do
+    user = find_user(state, username)
+
+    if user == nil do
+      {:reply, {:error, "such user doesn't exist"}, state}
+    else
+      {:reply, {:success, user.friendlist}, state}
     end
   end
 
