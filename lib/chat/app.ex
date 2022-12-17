@@ -117,4 +117,25 @@ defmodule App do
       {:total_unread, {:receiver, receiver}}
     )
   end
+
+  def list_chat(username_1, username_2) do
+    GenServer.call(
+      Messaging,
+      {:list_chat, {{:username_1, username_1}, {:username_2, username_2}}}
+    )
+  end
+
+  # For Both
+
+  def remove_friend(username_1, username_2) do
+    GenServer.call(
+      Account,
+      {:remove_friend, {{:username_1, username_1}, {:username_2, username_2}}}
+    )
+
+    GenServer.call(
+      Messaging,
+      {:remove_friend, {{:username_1, username_1}, {:username_2, username_2}}}
+    )
+  end
 end

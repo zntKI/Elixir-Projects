@@ -340,6 +340,131 @@ defmodule Messaging do
     end
   end
 
+  @impl true
+  def handle_call(
+        {:remove_friend, {{:username_1, username_1}, {:username_2, username_2}}},
+        _from,
+        state
+      ) do
+    user_1 = find_user(state, username_1)
+
+    cond do
+      user_1 == nil ->
+        {:reply, {:error, "such user doesn't exist"}, state}
+
+      true ->
+        user_2 = find_user(state, username_2)
+
+        if user_2 == nil do
+          {:reply, {:error, "such user doesn't exist"}, state}
+        else
+          new_state =
+            Enum.map(state, fn %Messaging{user_id: user_id} = user_map ->
+              cond do
+                username_1 == user_id ->
+                  %Messaging{
+                    user_1
+                    | messages:
+                        Enum.filter(user_1.messages, fn map ->
+                          sender_id =
+                            map
+                            |> Map.keys()
+                            |> List.first()
+
+                          sender_id != username_2
+                        end)
+                  }
+
+                username_2 == user_id ->
+                  %Messaging{
+                    user_2
+                    | messages:
+                        Enum.filter(user_2.messages, fn map ->
+                          sender_id =
+                            map
+                            |> Map.keys()
+                            |> List.first()
+
+                          sender_id != username_1
+                        end)
+                  }
+
+                true ->
+                  user_map
+              end
+            end)
+
+          {:reply,
+           {:success,
+            "successfully removed user #{username_2} from the friendlist of user #{username_1}",
+            "successfully removed user #{username_1} from the friendlist of user #{username_2}"},
+           new_state}
+        end
+    end
+  end
+
+  def handle_call(
+        {:list_chat, {{:username_1, username_1}, {:username_2, username_2}}},
+        _from,
+        state
+      ) do
+    user_1 = find_user(state, username_1)
+    user_2 = find_user(state, username_2)
+
+    cond do
+      user_1 == nil ->
+        {:reply, {:error, "such user doesn't exist"}, state}
+
+      user_2 == nil ->
+        {:reply, {:error, "such user doesn't exist"}, state}
+
+      true ->
+        are_friends = App.are_friends(user_1, user_2)
+
+        if are_friends == false do
+          {:reply, {:error, "users are not friends"}, state}
+        else
+          map_first =
+            Enum.find(user_1.messages, fn map ->
+              sender_id =
+                map
+                |> Map.keys()
+                |> List.first()
+
+              sender_id == username_2
+            end)
+
+          msgs_first = map_first[username_2]
+
+          map_second =
+            Enum.find(user_2.messages, fn map ->
+              sender_id =
+                map
+                |> Map.keys()
+                |> List.first()
+
+              sender_id == username_1
+            end)
+
+          msgs_second = map_second[username_1]
+
+          unsorted_list = msgs_first ++ msgs_second
+
+          final_list =
+            Enum.sort_by(unsorted_list, fn %{
+                                             content: _content,
+                                             status: _status,
+                                             time: time,
+                                             edited: _is_edited
+                                           } ->
+              time
+            end)
+
+          {:reply, {:chat, final_list}, state}
+        end
+    end
+  end
+
   def filter_unread(msgs) do
     msgs
     |> List.flatten()

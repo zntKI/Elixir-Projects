@@ -224,6 +224,53 @@ defmodule Account do
 
   @impl true
   def handle_call(
+        {:remove_friend, {{:username_1, username_1}, {:username_2, username_2}}},
+        _from,
+        state
+      ) do
+    user_1 = find_user(state, username_1)
+
+    cond do
+      user_1 == nil ->
+        {:reply, {:error, "such user doesn't exist"}, state}
+
+      true ->
+        user_2 = find_user(state, username_2)
+
+        if user_2 == nil do
+          {:reply, {:error, "such user doesn't exist"}, state}
+        else
+          new_state =
+            Enum.map(state, fn %Account{id: user_id} = map ->
+              cond do
+                username_1 == user_id ->
+                  %Account{
+                    user_1
+                    | friendlist: List.delete(user_1.friendlist, username_2)
+                  }
+
+                username_2 == user_id ->
+                  %Account{
+                    user_2
+                    | friendlist: List.delete(user_2.friendlist, username_1)
+                  }
+
+                true ->
+                  map
+              end
+            end)
+
+          {:reply,
+           {:success,
+            "successfully removed user #{username_2} from the friendlist of user #{username_1}",
+            "successfully removed user #{username_1} from the friendlist of user #{username_2}"},
+           new_state}
+        end
+    end
+  end
+
+  @impl true
+  def handle_call(
         {:are_friends, {{:user_1, user_1}, {:user_2, user_2}}},
         _from,
         state
