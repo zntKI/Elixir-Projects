@@ -1,4 +1,9 @@
 defmodule App do
+  @moduledoc """
+  This module is responsible for the client side of both GenServers:
+    Account and Messaging
+  """
+
   def start() do
     GenServer.start(Account, [], name: Account)
     GenServer.start(Messaging, [], name: Messaging)
@@ -52,6 +57,11 @@ defmodule App do
     )
   end
 
+  @doc """
+  Accepts or denies invite from user
+  """
+  def handle_invite(sent_to, sent_by, accept_or_deny)
+
   def handle_invite(username, username_to_handle, action) do
     GenServer.call(
       Account,
@@ -88,14 +98,14 @@ defmodule App do
     )
   end
 
-  def remove_message(sender, receiver, message) do
+  def remove_message(receiver, sender, message) do
     GenServer.call(
       Messaging,
       {:remove, {{:sender, sender}, {:receiver, receiver}, {:message, message}}}
     )
   end
 
-  def edit_message(sender, receiver, old_message, new_message) do
+  def edit_message(receiver, sender, old_message, new_message) do
     GenServer.call(
       Messaging,
       {:edit,

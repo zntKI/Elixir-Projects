@@ -1,4 +1,8 @@
 defmodule Account do
+  @moduledoc """
+  GenServer holding data for user's accounts
+  """
+
   use GenServer
 
   defstruct [:id, :username, :email, :password, :is_logged_in, :invitations, :friendlist]
@@ -22,7 +26,7 @@ defmodule Account do
       {:reply, {:error, "no such user"}, state}
     else
       if user.password == u_password do
-        new_state = user_is_logged_in(state, user, true)
+        new_state = user_log(state, user, true)
 
         {:reply, {:success, "you have logged in"}, new_state}
       else
@@ -67,7 +71,7 @@ defmodule Account do
     if user == nil do
       {:reply, {:error, "such user doesn't exist"}, state}
     else
-      new_state = user_is_logged_in(state, user, false)
+      new_state = user_log(state, user, false)
 
       {:reply, {:success, "you have logged out"}, new_state}
     end
@@ -89,7 +93,6 @@ defmodule Account do
         {:reply, {:error, "the sender isn't logged in"}, state}
 
       true ->
-        # TODO: User should be logged in to make use of this action
         friend = Enum.find(user_receiver.friendlist, fn fr -> fr == user_sender.id end)
 
         if friend != nil do
@@ -157,68 +160,73 @@ defmodule Account do
       ) do
     user = find_user(state, username)
 
-    if user == nil do
-      {:reply, {:error, "such user doesn't exist"}, state}
-    else
-      invitation = find_invitation(user, username_to_handle)
+    cond do
+      user == nil ->
+        {:reply, {:error, "such user doesn't exist"}, state}
 
-      case invitation do
-        nil ->
-          {:reply, {:error, "there isn't a invite from such user"}, state}
+      user.is_logged_in == false ->
+        {:reply, {:error, "user isn't logged in"}, state}
 
-        _ ->
-          deleted_invite_state =
-            Enum.map(state, fn
-              %Account{id: id} = new_user ->
-                if id == user.id do
-                  %Account{
-                    user
-                    | invitations: List.delete(user.invitations, username_to_handle)
-                  }
-                else
-                  new_user
-                end
-            end)
+      true ->
+        invitation = find_invitation(user, username_to_handle)
 
-          if action == "accept" do
-            user_to_handle = find_user(state, username_to_handle)
+        case invitation do
+          nil ->
+            {:reply, {:error, "there isn't a invite from such user"}, state}
 
-            new_state =
-              Enum.map(deleted_invite_state, fn
+          _ ->
+            deleted_invite_state =
+              Enum.map(state, fn
                 %Account{id: id} = new_user ->
                   if id == user.id do
                     %Account{
                       user
-                      | friendlist: [username_to_handle | user.friendlist],
-                        invitations: List.delete(user.invitations, username_to_handle)
+                      | invitations: List.delete(user.invitations, username_to_handle)
                     }
                   else
-                    if id == user_to_handle.id do
-                      %Account{
-                        user_to_handle
-                        | friendlist: [username | user_to_handle.friendlist]
-                      }
-                    else
-                      new_user
-                    end
+                    new_user
                   end
               end)
 
-            App.add_friend(username, username_to_handle)
+            if action == "accept" do
+              user_to_handle = find_user(state, username_to_handle)
 
-            {:reply,
-             {:success, "successfully accepted the invitation from #{username_to_handle}"},
-             new_state}
-          else
-            if action != "decline" do
-              {:reply, "no such action accessable: #{action}", state}
-            else
+              new_state =
+                Enum.map(deleted_invite_state, fn
+                  %Account{id: id} = new_user ->
+                    if id == user.id do
+                      %Account{
+                        user
+                        | friendlist: [username_to_handle | user.friendlist],
+                          invitations: List.delete(user.invitations, username_to_handle)
+                      }
+                    else
+                      if id == user_to_handle.id do
+                        %Account{
+                          user_to_handle
+                          | friendlist: [username | user_to_handle.friendlist]
+                        }
+                      else
+                        new_user
+                      end
+                    end
+                end)
+
+              App.add_friend(username, username_to_handle)
+
               {:reply,
-               {:success, "successfully declined the invitation from #{username_to_handle}"},
-               deleted_invite_state}
+               {:success, "successfully accepted the invitation from #{username_to_handle}"},
+               new_state}
+            else
+              if action != "decline" do
+                {:reply, "no such action accessable: #{action}", state}
+              else
+                {:reply,
+                 {:success, "successfully declined the invitation from #{username_to_handle}"},
+                 deleted_invite_state}
+              end
             end
-          end
-      end
+        end
     end
   end
 
@@ -304,7 +312,7 @@ defmodule Account do
     end)
   end
 
-  def user_is_logged_in(state, user, bool) do
+  def user_log(state, user, bool) do
     Enum.map(state, fn
       %Account{id: id} = new_user ->
         if id == user.id do
@@ -314,13 +322,4 @@ defmodule Account do
         end
     end)
   end
-
-  # def are_friends(first_username, second_username) do
-  #   find_user()
-  # end
-
-  # @impl true
-  # def handle_call(:test, _from, state) do
-  #   {:reply, true, state}
-  # end
 end

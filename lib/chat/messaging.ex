@@ -1,4 +1,8 @@
 defmodule Messaging do
+  @moduledoc """
+  GenServer holding data for user's accounts
+  """
+
   use GenServer
 
   defstruct [:user_id, :messages]
@@ -43,10 +47,7 @@ defmodule Messaging do
                     user_receiver
                     | messages:
                         Enum.map(messages_from_all, fn map = new_msgs ->
-                          sender_id =
-                            map
-                            |> Map.keys()
-                            |> List.first()
+                          sender_id = get_sender_id(map)
 
                           if sender_id == sender do
                             Map.update!(map, sender_id, fn msgs ->
@@ -99,10 +100,7 @@ defmodule Messaging do
         else
           contains_message =
             Enum.find(user_receiver.messages, false, fn map ->
-              sender_id =
-                map
-                |> Map.keys()
-                |> List.first()
+              sender_id = get_sender_id(map)
 
               if sender_id == user_sender.user_id do
                 Enum.any?(map[sender_id], fn %{
@@ -129,10 +127,7 @@ defmodule Messaging do
                       user_receiver
                       | messages:
                           Enum.map(messages_from_all, fn map = new_msgs ->
-                            sender_id =
-                              map
-                              |> Map.keys()
-                              |> List.first()
+                            sender_id = get_sender_id(map)
 
                             if sender_id == sender do
                               after_removal =
@@ -188,10 +183,7 @@ defmodule Messaging do
         else
           contains_message =
             Enum.find(user_receiver.messages, false, fn map ->
-              sender_id =
-                map
-                |> Map.keys()
-                |> List.first()
+              sender_id = get_sender_id(map)
 
               if sender_id == user_sender.user_id do
                 Enum.any?(map[sender_id], fn %{
@@ -219,10 +211,7 @@ defmodule Messaging do
                       user_receiver
                       | messages:
                           Enum.map(messages_from_all, fn map = new_msgs ->
-                            sender_id =
-                              map
-                              |> Map.keys()
-                              |> List.first()
+                            sender_id = get_sender_id(map)
 
                             if sender_id == sender do
                               after_removal =
@@ -269,10 +258,7 @@ defmodule Messaging do
 
         msgs =
           Enum.map(user.messages, fn map ->
-            sender_id =
-              map
-              |> Map.keys()
-              |> List.first()
+            sender_id = get_sender_id(map)
 
             map[sender_id]
           end)
@@ -289,22 +275,14 @@ defmodule Messaging do
         else
           msgs =
             Enum.map(user_receiver.messages, fn map ->
-              sender_id =
-                map
-                |> Map.keys()
-                |> List.first()
-
-              IO.inspect(sender_id)
+              sender_id = get_sender_id(map)
 
               if sender_id == sender do
-                IO.inspect(map[sender_id])
                 map[sender_id]
               else
                 []
               end
             end)
-
-          IO.inspect(msgs)
 
           filtered = filter_unread(msgs)
 
@@ -326,10 +304,7 @@ defmodule Messaging do
 
         msgs =
           Enum.map(user.messages, fn map ->
-            sender_id =
-              map
-              |> Map.keys()
-              |> List.first()
+            sender_id = get_sender_id(map)
 
             map[sender_id]
           end)
@@ -366,10 +341,7 @@ defmodule Messaging do
                     user_1
                     | messages:
                         Enum.filter(user_1.messages, fn map ->
-                          sender_id =
-                            map
-                            |> Map.keys()
-                            |> List.first()
+                          sender_id = get_sender_id(map)
 
                           sender_id != username_2
                         end)
@@ -380,10 +352,7 @@ defmodule Messaging do
                     user_2
                     | messages:
                         Enum.filter(user_2.messages, fn map ->
-                          sender_id =
-                            map
-                            |> Map.keys()
-                            |> List.first()
+                          sender_id = get_sender_id(map)
 
                           sender_id != username_1
                         end)
@@ -426,10 +395,7 @@ defmodule Messaging do
         else
           map_first =
             Enum.find(user_1.messages, fn map ->
-              sender_id =
-                map
-                |> Map.keys()
-                |> List.first()
+              sender_id = get_sender_id(map)
 
               sender_id == username_2
             end)
@@ -438,10 +404,7 @@ defmodule Messaging do
 
           map_second =
             Enum.find(user_2.messages, fn map ->
-              sender_id =
-                map
-                |> Map.keys()
-                |> List.first()
+              sender_id = get_sender_id(map)
 
               sender_id == username_1
             end)
@@ -460,9 +423,24 @@ defmodule Messaging do
               time
             end)
 
-          {:reply, {:chat, final_list}, state}
+          {:reply,
+           {:chat,
+            Enum.map(final_list, fn %{
+                                      content: content,
+                                      status: _status,
+                                      time: _time,
+                                      edited: _is_edited
+                                    } ->
+              content
+            end)}, state}
         end
     end
+  end
+
+  def get_sender_id(map) do
+    map
+    |> Map.keys()
+    |> List.first()
   end
 
   def filter_unread(msgs) do
